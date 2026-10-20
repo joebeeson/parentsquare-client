@@ -11,6 +11,10 @@ district's policies before using it.
 
 The package has no dlt or Home Assistant dependency:
 
+```bash
+pip install "parentsquare-client @ git+https://github.com/joebeeson/parentsquare-client.git@v0.1.1"
+```
+
 ```python
 from parentsquare import AsyncParentSquareClient
 
