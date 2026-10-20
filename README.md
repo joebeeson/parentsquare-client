@@ -48,6 +48,9 @@ checks used by CI. Tagged releases create GitHub release artifacts; the
 published release workflow uses PyPI Trusted Publishing and can be dispatched
 against TestPyPI for a pre-release verification.
 
+See [docs/releasing.md](docs/releasing.md) for the one-time Trusted Publisher
+configuration and tag workflow.
+
 ```python
 from parentsquare import AsyncParentSquareClient
 
