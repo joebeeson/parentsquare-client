@@ -8,8 +8,6 @@ from aiohttp.test_utils import TestServer
 from parentsquare.client import AsyncParentSquareClient
 from parentsquare.errors import MFARequired, RateLimitError
 
-FIXTURES = Path(__file__).parent / "fixtures"
-
 
 async def make_server(routes: dict[str, object]) -> TestServer:
     app = web.Application()
@@ -21,10 +19,10 @@ async def make_server(routes: dict[str, object]) -> TestServer:
 
 
 @pytest.mark.asyncio
-async def test_client_discovers_and_fetches_posts_and_calendar() -> None:
-    root = (FIXTURES / "root.html").read_text()
-    feed = (FIXTURES / "feed.html").read_text()
-    calendar = (FIXTURES / "calendar.ics").read_text()
+async def test_client_discovers_and_fetches_posts_and_calendar(fixture_dir: Path) -> None:
+    root = (fixture_dir / "root.html").read_text()
+    feed = (fixture_dir / "feed.html").read_text()
+    calendar = (fixture_dir / "calendar.ics").read_text()
 
     async def root_handler(_: web.Request) -> web.Response:
         return web.Response(text=root)
@@ -55,6 +53,52 @@ async def test_client_discovers_and_fetches_posts_and_calendar() -> None:
     assert schools[0].id == 101
     assert len(posts) == 2
     assert len(events) == 2
+    await client.close()
+    await session.close()
+    await server.close()
+
+
+@pytest.mark.asyncio
+async def test_client_discovers_students_dashboards_groups_and_raw_reads(fixture_dir: Path) -> None:
+    root = (fixture_dir / "root_students.html").read_text()
+    dashboard = (fixture_dir / "student_dashboard.html").read_text()
+    groups = (fixture_dir / "groups.html").read_text()
+
+    async def root_handler(_: web.Request) -> web.Response:
+        return web.Response(text=root)
+
+    async def dashboard_handler(_: web.Request) -> web.Response:
+        return web.Response(text=dashboard)
+
+    async def groups_handler(_: web.Request) -> web.Response:
+        return web.Response(text=groups)
+
+    async def json_handler(_: web.Request) -> web.Response:
+        return web.json_response({"data": {"ok": True}})
+
+    server = await make_server(
+        {
+            "/": root_handler,
+            "/students/7/dashboard": dashboard_handler,
+            "/schools/101/groups": groups_handler,
+            "/api/v2/example": json_handler,
+        }
+    )
+    session = aiohttp.ClientSession(base_url=str(server.make_url("/")).rstrip("/"))
+    client = AsyncParentSquareClient(
+        "user@example.com",
+        "secret",
+        base_url=str(server.make_url("/")).rstrip("/"),
+        session=session,
+    )
+    account = await client.discover_account()
+    assert [student.id for student in account.students] == [7, 8]
+    student = account.students[0]
+    dashboard_data = await client.fetch_student_dashboard(student)
+    assert dashboard_data.classes[0].name == "Science"
+    groups_data = await client.fetch_groups(account.schools[0])
+    assert groups_data[0].name == "Cooking Club"
+    assert await client.get_json("/api/v2/example") == {"data": {"ok": True}}
     await client.close()
     await session.close()
     await server.close()

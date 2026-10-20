@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  checks: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -29,7 +30,25 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
-      - run: uv run --extra dev pytest
+      - run: >-
+          uv run --extra dev pytest
+          --junitxml=artifacts/junit-\${{ matrix.python-version }}.xml
+          --cov=parentsquare
+          --cov-report=term-missing
+          --cov-report=xml:artifacts/coverage-\${{ matrix.python-version }}.xml
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-reports-\${{ matrix.python-version }}
+          path: artifacts/
+      - name: Publish test results
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: dorny/test-reporter@d3cb5605561a46347256b466ef836b85076ad522 # v2.5.0
+        with:
+          name: pytest (Python \${{ matrix.python-version }})
+          path: artifacts/junit-\${{ matrix.python-version }}.xml
+          reporter: java-junit
 
   quality:
     name: quality
@@ -44,6 +63,7 @@ jobs:
           enable-cache: true
       - run: uv run --extra dev ruff check .
       - run: uv run --extra dev ruff format --check .
+      - run: uv run --extra dev pyrefly check
 
   package:
     name: package

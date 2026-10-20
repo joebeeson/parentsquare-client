@@ -8,17 +8,33 @@ from .errors import (
     RateLimitError,
 )
 from .keyring import KeyringCredentialStore
-from .models import CalendarEvent, Post, School
+from .models import (
+    AccountSnapshot,
+    CalendarEvent,
+    Group,
+    Post,
+    School,
+    SchoolFeatures,
+    Student,
+    StudentClass,
+    StudentDashboard,
+)
 
 __all__ = [
     "AsyncParentSquareClient",
+    "AccountSnapshot",
     "AuthenticationError",
     "CalendarEvent",
+    "Group",
     "KeyringCredentialStore",
     "MFARequired",
     "ParentSquareError",
     "Post",
     "RateLimitError",
     "School",
+    "SchoolFeatures",
+    "Student",
+    "StudentClass",
+    "StudentDashboard",
     "ParentSquareClient",
 ]

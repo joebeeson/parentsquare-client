@@ -8,8 +8,8 @@
 [![Latest release](https://img.shields.io/github/v/release/joebeeson/parentsquare-client?sort=semver)](https://github.com/joebeeson/parentsquare-client/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-An unofficial, read-only sync and async ParentSquare client for school posts
-and calendar events.
+An unofficial, read-only sync and async ParentSquare client for the
+authenticated ParentSquare web experience.
 
 ParentSquare does not publish a parent-facing API. This project reads the
 authenticated parent web experience and therefore may stop working when
@@ -20,14 +20,14 @@ district's policies before using it.
 The package has no dlt or Home Assistant dependency:
 
 ```bash
-pip install "parentsquare-client @ git+https://github.com/joebeeson/parentsquare-client.git@v0.1.2"
+pip install "parentsquare-client @ git+https://github.com/joebeeson/parentsquare-client.git@v0.2.0"
 ```
 
 Credential storage is opt-in. Install the `keyring` extra to use the operating
 system's configured credential store:
 
 ```bash
-pip install "parentsquare-client[keyring] @ git+https://github.com/joebeeson/parentsquare-client.git@v0.1.2"
+pip install "parentsquare-client[keyring] @ git+https://github.com/joebeeson/parentsquare-client.git@v0.2.0"
 ```
 
 ```python
@@ -56,9 +56,14 @@ configuration and tag workflow.
 from parentsquare import AsyncParentSquareClient
 
 async with AsyncParentSquareClient("parent@example.com", "password") as client:
-    schools = await client.discover_schools()
+    account = await client.discover_account()
+    schools = account.schools
+    students = account.students
     posts = await client.fetch_posts(schools[0].id)
     events = await client.fetch_calendar_events(schools[0].id)
+    dashboard = await client.fetch_student_dashboard(students[0])
+    groups = await client.fetch_groups(schools[0])
+    group_posts = await client.fetch_group_posts(schools[0], groups[0])
 ```
 
 The synchronous wrapper is useful for scripts and data tools:
@@ -71,10 +76,16 @@ with ParentSquareClient("parent@example.com", "password") as client:
     posts = client.fetch_posts(schools[0].id)
 ```
 
+The typed models use frozen, slotted dataclasses and expose `to_record()` for
+data tools. `get_html()`, `get_json()`, and `get_ics()` provide an authenticated
+read-only escape hatch for upstream pages that have not yet earned a stable
+model. There are intentionally no write methods.
+
 IDs are stable within ParentSquare's account and are suitable for downstream
-deduplication and merge keys. Synthetic fixtures are used in this repository's
-tests; real messages, cookies, credentials, and calendar URLs must never be
-committed.
+deduplication and merge keys. A student dashboard's `grade_level` is a school
+grade label, not an academic mark. Synthetic fixtures are used in this
+repository's tests; real messages, cookies, credentials, student records, and
+calendar URLs must never be committed.
 
 ## Authentication
 
@@ -85,6 +96,9 @@ cookies; an embedding application owns that storage policy.
 
 ## Status
 
-This is an early alpha. Reads only are implemented. Replies, acknowledgements,
-forms, sign-ups, payments, attachments, and action extraction are deliberately
-out of scope. dlt and Home Assistant adapters live in separate repositories.
+This is an early alpha. Parent-visible schools, students, student dashboards,
+groups, group feeds, posts, and calendars are typed read operations. Less
+stable read-only pages can be reached with the raw methods while their models
+are developed. Replies, acknowledgements, forms, sign-ups, payments,
+attachments, and every write operation remain out of scope for this client.
+dlt and Home Assistant adapters live in separate repositories.

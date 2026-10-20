@@ -12,8 +12,24 @@ import aiohttp
 from bs4 import BeautifulSoup
 
 from .errors import AuthenticationError, MFARequired, RateLimitError
-from .models import CalendarEvent, Post, School
-from .parsers import parse_calendar, parse_posts, parse_schools
+from .models import (
+    AccountSnapshot,
+    CalendarEvent,
+    Group,
+    Post,
+    School,
+    SchoolFeatures,
+    Student,
+    StudentDashboard,
+)
+from .parsers import (
+    parse_account,
+    parse_calendar,
+    parse_groups,
+    parse_posts,
+    parse_school_features,
+    parse_student_dashboard,
+)
 
 _BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36",
@@ -51,6 +67,7 @@ class AsyncParentSquareClient:
         self._owns_session = session is None
         self._authenticated = False
         self._pending_mfa: dict[str, str] | None = None
+        self._account: AccountSnapshot | None = None
 
     async def __aenter__(self) -> "AsyncParentSquareClient":
         await self.ensure_authenticated()
@@ -109,6 +126,48 @@ class AsyncParentSquareClient:
             self._authenticated = False
             raise AuthenticationError("ParentSquare session expired")
         return response
+
+    async def _authenticated_get(self, path: str, **kwargs: Any) -> _Response:
+        """GET with one safe session-renewal retry."""
+        await self.ensure_authenticated()
+        try:
+            return await self._get(path, **kwargs)
+        except AuthenticationError:
+            self._authenticated = False
+            await self.ensure_authenticated()
+            return await self._get(path, **kwargs)
+
+    async def get_html(self, path: str, *, params: dict[str, Any] | None = None) -> str:
+        """Read an arbitrary authenticated HTML page.
+
+        This is the escape hatch for undocumented, read-only pages that do not
+        yet have a stable typed model. It deliberately has no write method.
+        """
+        response = await self._authenticated_get(path, params=params or {})
+        return response.text
+
+    async def get_json(self, path: str, *, params: dict[str, Any] | None = None) -> Any:
+        """Read an arbitrary authenticated JSON endpoint."""
+        response = await self._authenticated_get(
+            path,
+            params=params or {},
+            headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+        )
+        if response.json_data is None:
+            try:
+                return json.loads(response.text)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError("ParentSquare returned a non-JSON response") from exc
+        return response.json_data
+
+    async def get_ics(self, path: str, *, params: dict[str, Any] | None = None) -> str:
+        """Read an arbitrary authenticated ICS calendar endpoint."""
+        response = await self._authenticated_get(
+            path,
+            params=params or {},
+            headers={"Accept": "text/calendar"},
+        )
+        return response.text
 
     @staticmethod
     def _csrf(html: str) -> str:
@@ -192,25 +251,84 @@ class AsyncParentSquareClient:
             pass
         await self.login()
 
-    async def discover_schools(self) -> list[School]:
-        await self.ensure_authenticated()
-        response = await self._get("/")
-        schools = parse_schools(response.text, self.base_url)
-        if not schools:
+    async def discover_account(self, *, force_refresh: bool = False) -> AccountSnapshot:
+        """Discover the schools and students visible to this parent account."""
+        if self._account is not None and not force_refresh:
+            return self._account
+        response = await self._authenticated_get("/")
+        account = parse_account(response.text, self.base_url)
+        if not account.schools:
             raise AuthenticationError("ParentSquare did not expose any schools for this account")
-        return schools
+        self._account = account
+        return account
+
+    async def discover_schools(self) -> list[School]:
+        return list((await self.discover_account()).schools)
+
+    async def discover_students(self) -> list[Student]:
+        """Return only students linked to and visible from this account."""
+        return list((await self.discover_account()).students)
+
+    async def fetch_student_dashboard(self, student: Student | int) -> StudentDashboard:
+        """Fetch the parent-facing dashboard for one linked student."""
+        student_obj = student
+        if isinstance(student, int):
+            student_obj = next(
+                (item for item in await self.discover_students() if item.id == student),
+                None,
+            )
+            student_id = student
+        else:
+            student_id = student.id
+        response = await self._authenticated_get(f"/students/{student_id}/dashboard")
+        return parse_student_dashboard(
+            response.text,
+            student_id=student_id,
+            student=student_obj if isinstance(student_obj, Student) else None,
+        )
+
+    async def fetch_school_features(self, school: School | int) -> SchoolFeatures:
+        """Read the feature/navigation labels visible for a school."""
+        school_obj = school if isinstance(school, School) else School(school, f"School {school}")
+        response = await self._authenticated_get(f"/schools/{school_obj.id}/feeds")
+        return parse_school_features(response.text, school=school_obj)
+
+    async def fetch_groups(self, school: School | int) -> list[Group]:
+        """List groups visible within a school."""
+        school_obj = school if isinstance(school, School) else School(school, f"School {school}")
+        response = await self._authenticated_get(f"/schools/{school_obj.id}/groups")
+        return parse_groups(response.text, school=school_obj)
+
+    async def fetch_group_posts(
+        self, school: School | int, group: Group | int, *, pages: int = 1
+    ) -> list[Post]:
+        """Read a group's feed using the same typed post model as school feeds."""
+        school_obj = school if isinstance(school, School) else School(school, f"School {school}")
+        group_id = group.id if isinstance(group, Group) else group
+        results: list[Post] = []
+        for page in range(1, max(1, pages) + 1):
+            response = await self._authenticated_get(
+                f"/schools/{school_obj.id}/groups/{group_id}/feeds",
+                params={"page": page},
+            )
+            page_posts = parse_posts(
+                response.text,
+                base_url=self.base_url,
+                school=school_obj,
+                group_id=group_id,
+            )
+            results.extend(page_posts)
+            if not page_posts:
+                break
+        return results
 
     async def fetch_posts(self, school: School | int, *, pages: int = 1) -> list[Post]:
-        await self.ensure_authenticated()
         school_obj = school if isinstance(school, School) else School(school, f"School {school}")
         results: list[Post] = []
         for page in range(1, max(1, pages) + 1):
-            try:
-                response = await self._get(f"/schools/{school_obj.id}/feeds", params={"page": page})
-            except AuthenticationError:
-                self._authenticated = False
-                await self.ensure_authenticated()
-                response = await self._get(f"/schools/{school_obj.id}/feeds", params={"page": page})
+            response = await self._authenticated_get(
+                f"/schools/{school_obj.id}/feeds", params={"page": page}
+            )
             page_posts = parse_posts(response.text, base_url=self.base_url, school=school_obj)
             results.extend(page_posts)
             if not page_posts:
@@ -218,20 +336,11 @@ class AsyncParentSquareClient:
         return results
 
     async def fetch_calendar_events(self, school: School | int) -> list[CalendarEvent]:
-        await self.ensure_authenticated()
         school_obj = school if isinstance(school, School) else School(school, f"School {school}")
-        try:
-            response = await self._get(
-                f"/schools/{school_obj.id}/calendars.ics",
-                headers={"Accept": "text/calendar"},
-            )
-        except AuthenticationError:
-            self._authenticated = False
-            await self.ensure_authenticated()
-            response = await self._get(
-                f"/schools/{school_obj.id}/calendars.ics",
-                headers={"Accept": "text/calendar"},
-            )
+        response = await self._authenticated_get(
+            f"/schools/{school_obj.id}/calendars.ics",
+            headers={"Accept": "text/calendar"},
+        )
         return parse_calendar(response.text, base_url=self.base_url, school=school_obj)
 
     async def fetch_all_posts(self, schools: Iterable[School] | None = None) -> list[Post]:
@@ -302,8 +411,37 @@ class ParentSquareClient:
     def submit_mfa_code(self, code: str) -> None:
         self._run(lambda client: client.submit_mfa_code(code))
 
+    def get_html(self, path: str, *, params: dict[str, Any] | None = None) -> str:
+        return self._run(lambda client: client.get_html(path, params=params))
+
+    def get_json(self, path: str, *, params: dict[str, Any] | None = None) -> Any:
+        return self._run(lambda client: client.get_json(path, params=params))
+
+    def get_ics(self, path: str, *, params: dict[str, Any] | None = None) -> str:
+        return self._run(lambda client: client.get_ics(path, params=params))
+
+    def discover_account(self, *, force_refresh: bool = False) -> AccountSnapshot:
+        return self._run(lambda client: client.discover_account(force_refresh=force_refresh))
+
     def discover_schools(self) -> list[School]:
         return self._run(lambda client: client.discover_schools())
+
+    def discover_students(self) -> list[Student]:
+        return self._run(lambda client: client.discover_students())
+
+    def fetch_student_dashboard(self, student: Student | int) -> StudentDashboard:
+        return self._run(lambda client: client.fetch_student_dashboard(student))
+
+    def fetch_school_features(self, school: School | int) -> SchoolFeatures:
+        return self._run(lambda client: client.fetch_school_features(school))
+
+    def fetch_groups(self, school: School | int) -> list[Group]:
+        return self._run(lambda client: client.fetch_groups(school))
+
+    def fetch_group_posts(
+        self, school: School | int, group: Group | int, *, pages: int = 1
+    ) -> list[Post]:
+        return self._run(lambda client: client.fetch_group_posts(school, group, pages=pages))
 
     def fetch_posts(self, school: School | int, *, pages: int = 1) -> list[Post]:
         return self._run(lambda client: client.fetch_posts(school, pages=pages))
