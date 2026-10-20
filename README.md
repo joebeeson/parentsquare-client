@@ -4,6 +4,7 @@
 [![Prek](https://github.com/joebeeson/parentsquare-client/actions/workflows/prek.yml/badge.svg?branch=master)](https://github.com/joebeeson/parentsquare-client/actions/workflows/prek.yml)
 [![CodeQL](https://github.com/joebeeson/parentsquare-client/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/joebeeson/parentsquare-client/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/joebeeson/parentsquare-client/badge)](https://securityscorecards.dev/viewer/?uri=github.com/joebeeson/parentsquare-client)
+[![PyPI](https://img.shields.io/pypi/v/parentsquare-client.svg)](https://pypi.org/project/parentsquare-client/)
 [![Latest release](https://img.shields.io/github/v/release/joebeeson/parentsquare-client?sort=semver)](https://github.com/joebeeson/parentsquare-client/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
