@@ -2,6 +2,7 @@
 
 from .client import AsyncParentSquareClient, ParentSquareClient
 from .errors import (
+    AccessDeniedError,
     AuthenticationError,
     MFARequired,
     ParentSquareError,
@@ -23,6 +24,7 @@ from .models import (
 __all__ = [
     "AsyncParentSquareClient",
     "AccountSnapshot",
+    "AccessDeniedError",
     "AuthenticationError",
     "CalendarEvent",
     "Group",

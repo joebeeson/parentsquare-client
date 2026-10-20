@@ -6,7 +6,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from parentsquare.client import AsyncParentSquareClient
-from parentsquare.errors import MFARequired, RateLimitError
+from parentsquare.errors import AccessDeniedError, MFARequired, RateLimitError
 from parentsquare.models import School, Student
 
 
@@ -180,6 +180,25 @@ async def test_rate_limit_is_structured() -> None:
     with pytest.raises(RateLimitError) as error:
         await client._get("/")
     assert error.value.retry_after == 12
+    await session.close()
+    await server.close()
+
+
+@pytest.mark.asyncio
+async def test_forbidden_source_is_not_reported_as_authentication_failure() -> None:
+    async def handler(_: web.Request) -> web.Response:
+        return web.Response(status=403)
+
+    server = await make_server({"/": handler})
+    session = aiohttp.ClientSession(base_url=str(server.make_url("/")).rstrip("/"))
+    client = AsyncParentSquareClient(
+        "user@example.com",
+        "secret",
+        base_url=str(server.make_url("/")).rstrip("/"),
+        session=session,
+    )
+    with pytest.raises(AccessDeniedError):
+        await client._get("/")
     await session.close()
     await server.close()
 

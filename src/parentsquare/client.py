@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 import aiohttp
 from bs4 import BeautifulSoup
 
-from .errors import AuthenticationError, MFARequired, RateLimitError
+from .errors import AccessDeniedError, AuthenticationError, MFARequired, RateLimitError
 from .models import (
     AccountSnapshot,
     CalendarEvent,
@@ -141,8 +141,10 @@ class AsyncParentSquareClient:
             except (TypeError, ValueError):
                 seconds = None
             raise RateLimitError(seconds)
-        if response.status_code in (401, 403):
+        if response.status_code == 401:
             raise AuthenticationError("ParentSquare rejected the request")
+        if response.status_code == 403:
+            raise AccessDeniedError("ParentSquare denied access to the requested source")
         if response.status_code >= 400:
             raise RuntimeError(f"ParentSquare request failed with HTTP {response.status_code}")
 

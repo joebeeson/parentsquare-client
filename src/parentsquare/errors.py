@@ -6,6 +6,10 @@ class AuthenticationError(ParentSquareError):
     """Credentials or the current session are not accepted."""
 
 
+class AccessDeniedError(ParentSquareError):
+    """The authenticated account cannot read a particular source."""
+
+
 class MFARequired(ParentSquareError):
     """The account requires a one-time verification code."""
 
