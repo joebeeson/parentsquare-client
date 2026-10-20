@@ -25,8 +25,8 @@ uv pip install --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ parentsquare-client
 ```
 
-TestPyPI and PyPI are separate indexes. Use a new version for every rehearsal
-and final publication.
+TestPyPI and PyPI are separate indexes. A version can be uploaded once to each
+index, but cannot be overwritten on the same index.
 
 ## Release flow
 
