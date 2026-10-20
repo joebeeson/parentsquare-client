@@ -221,10 +221,18 @@ class AsyncParentSquareClient:
     async def fetch_calendar_events(self, school: School | int) -> list[CalendarEvent]:
         await self.ensure_authenticated()
         school_obj = school if isinstance(school, School) else School(school, f"School {school}")
-        response = await self._get(
-            f"/schools/{school_obj.id}/calendars.ics",
-            headers={"Accept": "text/calendar"},
-        )
+        try:
+            response = await self._get(
+                f"/schools/{school_obj.id}/calendars.ics",
+                headers={"Accept": "text/calendar"},
+            )
+        except AuthenticationError:
+            self._authenticated = False
+            await self.ensure_authenticated()
+            response = await self._get(
+                f"/schools/{school_obj.id}/calendars.ics",
+                headers={"Accept": "text/calendar"},
+            )
         return parse_calendar(response.text, base_url=self.base_url, school=school_obj)
 
     async def fetch_all_posts(self, schools: Iterable[School] | None = None) -> list[Post]:
@@ -252,19 +260,23 @@ class ParentSquareClient:
         self._password = password
         self._kwargs = kwargs
         self._async: AsyncParentSquareClient | None = None
+        self._runner = asyncio.Runner()
+        self._closed = False
 
     def _run(self, operation: Any) -> Any:
         try:
             asyncio.get_running_loop()
         except RuntimeError:
             async def invoke() -> Any:
+                if self._closed:
+                    raise RuntimeError("ParentSquareClient is closed")
                 if self._async is None:
                     self._async = AsyncParentSquareClient(
                         self._username, self._password, **self._kwargs
                     )
                 return await operation(self._async)
 
-            return asyncio.run(invoke())
+            return self._runner.run(invoke())
         raise RuntimeError("ParentSquareClient cannot run inside an active event loop; use AsyncParentSquareClient")
 
     def __enter__(self) -> "ParentSquareClient":
@@ -275,8 +287,12 @@ class ParentSquareClient:
         self.close()
 
     def close(self) -> None:
+        if self._closed:
+            return
         if self._async is not None:
-            self._run(lambda client: client.close())
+            self._runner.run(self._async.close())
+        self._runner.close()
+        self._closed = True
 
     def login(self) -> None:
         self._run(lambda client: client.login())
