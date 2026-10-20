@@ -23,6 +23,7 @@ from .models import (
     StudentDashboard,
 )
 from .parsers import (
+    _school_id_by_name,
     parse_account,
     parse_calendar,
     parse_groups,
@@ -259,8 +260,70 @@ class AsyncParentSquareClient:
         account = parse_account(response.text, self.base_url)
         if not account.schools:
             raise AuthenticationError("ParentSquare did not expose any schools for this account")
-        self._account = account
-        return account
+        self._account = await self._enrich_account(account)
+        return self._account
+
+    async def _enrich_account(self, account: AccountSnapshot) -> AccountSnapshot:
+        """Resolve school names and parent-visible students from the school UI.
+
+        The root page often contains only ``gon.institute_id``.  ParentSquare's
+        school switcher and JSON:API expose the display names and additional
+        schools, while the selected school's feed contains the linked students.
+        These are all read-only requests and each enrichment is best effort so a
+        change to one optional page does not break the core account discovery.
+        """
+        schools: dict[int, School] = {school.id: school for school in account.schools}
+        students: dict[int, Student] = {student.id: student for student in account.students}
+        current_school = next(iter(schools.values()), None)
+
+        if current_school is not None:
+            try:
+                feed_html = await self.get_html(f"/schools/{current_school.id}/feeds")
+            except Exception:
+                feed_html = ""
+            if feed_html:
+                feed_account = parse_account(feed_html, self.base_url)
+                students.update({student.id: student for student in feed_account.students})
+                soup = BeautifulSoup(feed_html, "html.parser")
+                switcher = soup.find("a", class_="toggle-children")
+                template = str(switcher.get("data-remote-template") or "") if switcher else ""
+                if template:
+                    try:
+                        switch_html = await self.get_html(template)
+                    except Exception:
+                        switch_html = ""
+                    for school in parse_account(switch_html, self.base_url).schools:
+                        schools.setdefault(school.id, school)
+
+        for school_id, school in list(schools.items()):
+            try:
+                payload = await self.get_json(f"/api/v2/schools/{school_id}")
+                attributes = payload.get("data", {}).get("attributes", {})
+                name = attributes.get("name")
+            except Exception:
+                name = None
+            if isinstance(name, str) and name.strip():
+                schools[school_id] = School(school_id, name.strip())
+
+        resolved_students: list[Student] = []
+        for student in students.values():
+            school_id = student.school_id
+            if school_id is None and student.school_name:
+                school_id = _school_id_by_name(list(schools.values()), student.school_name)
+            resolved_students.append(
+                Student(
+                    id=student.id,
+                    name=student.name,
+                    school_id=school_id,
+                    school_name=student.school_name,
+                    grade_level=student.grade_level,
+                )
+            )
+        return AccountSnapshot(
+            account.user_id,
+            tuple(schools.values()),
+            tuple(resolved_students),
+        )
 
     async def discover_schools(self) -> list[School]:
         return list((await self.discover_account()).schools)

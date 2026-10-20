@@ -105,6 +105,61 @@ async def test_client_discovers_students_dashboards_groups_and_raw_reads(fixture
 
 
 @pytest.mark.asyncio
+async def test_account_enrichment_resolves_school_names_and_switcher_schools(
+    fixture_dir: Path,
+) -> None:
+    root = (fixture_dir / "root.html").read_text().replace(
+        '<a href="/schools/101/feeds">Bennington Middle School</a>',
+        '<script>gon.institute_id=101;</script>',
+    )
+    feed = (fixture_dir / "feed_context.html").read_text()
+    switch = (fixture_dir / "school_switch.html").read_text()
+
+    async def root_handler(_: web.Request) -> web.Response:
+        return web.Response(text=root)
+
+    async def feed_handler(_: web.Request) -> web.Response:
+        return web.Response(text=feed)
+
+    async def switch_handler(_: web.Request) -> web.Response:
+        return web.Response(text=switch)
+
+    async def school_handler(request: web.Request) -> web.Response:
+        names = {101: "Bennington Middle School", 202: "Bennington Elementary School"}
+        return web.json_response(
+            {"data": {"attributes": {"name": names[int(request.match_info["school_id"])]}}}
+        )
+
+    server = await make_server(
+        {
+            "/": root_handler,
+            "/schools/101/feeds": feed_handler,
+            "/layout_templates/school_switch_schools_list": switch_handler,
+            "/api/v2/schools/{school_id}": school_handler,
+        }
+    )
+    session = aiohttp.ClientSession(base_url=str(server.make_url("/")).rstrip("/"))
+    client = AsyncParentSquareClient(
+        "user@example.com",
+        "secret",
+        base_url=str(server.make_url("/")).rstrip("/"),
+        session=session,
+    )
+    account = await client.discover_account()
+    assert [(school.id, school.name) for school in account.schools] == [
+        (101, "Bennington Middle School"),
+        (202, "Bennington Elementary School"),
+    ]
+    assert [(student.id, student.school_id) for student in account.students] == [
+        (7, 101),
+        (9, 202),
+    ]
+    await client.close()
+    await session.close()
+    await server.close()
+
+
+@pytest.mark.asyncio
 async def test_rate_limit_is_structured() -> None:
     async def handler(_: web.Request) -> web.Response:
         return web.Response(status=429, headers={"Retry-After": "12"})
