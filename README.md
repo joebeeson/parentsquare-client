@@ -20,14 +20,14 @@ district's policies before using it.
 The package has no dlt or Home Assistant dependency:
 
 ```bash
-pip install "parentsquare-client @ git+https://github.com/joebeeson/parentsquare-client.git@v0.2.0"
+pip install "parentsquare-client @ git+https://github.com/joebeeson/parentsquare-client.git@v0.2.1"
 ```
 
 Credential storage is opt-in. Install the `keyring` extra to use the operating
 system's configured credential store:
 
 ```bash
-pip install "parentsquare-client[keyring] @ git+https://github.com/joebeeson/parentsquare-client.git@v0.2.0"
+pip install "parentsquare-client[keyring] @ git+https://github.com/joebeeson/parentsquare-client.git@v0.2.1"
 ```
 
 ```python
