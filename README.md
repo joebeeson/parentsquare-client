@@ -17,7 +17,7 @@ ParentSquare changes its site or account protections. It is not affiliated with
 or endorsed by ParentSquare, Inc. Review ParentSquare's current terms and your
 district's policies before using it.
 
-The package has no dlt or Home Assistant dependency:
+Install the client directly from its tagged release:
 
 ```bash
 pip install "parentsquare-client @ git+https://github.com/joebeeson/parentsquare-client.git@v0.2.1"
@@ -38,8 +38,8 @@ credentials.set_password("parent@example.com", "password")
 password = credentials.get_password("parent@example.com")
 ```
 
-The default client does not read or write the keyring. Home Assistant keeps its
-own config-entry credential policy.
+The default client does not read or write the keyring. The embedding application
+owns its credential storage policy.
 
 ## Development
 
@@ -101,4 +101,3 @@ groups, group feeds, posts, and calendars are typed read operations. Less
 stable read-only pages can be reached with the raw methods while their models
 are developed. Replies, acknowledgements, forms, sign-ups, payments,
 attachments, and every write operation remain out of scope for this client.
-dlt and Home Assistant adapters live in separate repositories.
