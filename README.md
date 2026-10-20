@@ -17,17 +17,19 @@ ParentSquare changes its site or account protections. It is not affiliated with
 or endorsed by ParentSquare, Inc. Review ParentSquare's current terms and your
 district's policies before using it.
 
-Install the client directly from its tagged release:
+Install the client from PyPI:
 
 ```bash
-pip install "parentsquare-client @ git+https://github.com/joebeeson/parentsquare-client.git@v0.2.1"
+pip install parentsquare-client
+uv add parentsquare-client
 ```
 
 Credential storage is opt-in. Install the `keyring` extra to use the operating
 system's configured credential store:
 
 ```bash
-pip install "parentsquare-client[keyring] @ git+https://github.com/joebeeson/parentsquare-client.git@v0.2.1"
+pip install "parentsquare-client[keyring]"
+uv add "parentsquare-client[keyring]"
 ```
 
 ```python

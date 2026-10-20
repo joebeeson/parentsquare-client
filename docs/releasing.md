@@ -14,6 +14,20 @@ The workflow uses GitHub's OIDC token, so no PyPI API token belongs in GitHub
 secrets. Configure the `pypi` GitHub environment with an approval rule if
 published releases should wait for a final review.
 
+The first publication is normally a TestPyPI rehearsal. From the repository's
+`Actions` tab, run `Publish to Python Package Index` with `repository` set to
+`testpypi`. Install that exact candidate with:
+
+```bash
+python -m pip install --index-url https://test.pypi.org/simple/ \
+  --extra-index-url https://pypi.org/simple/ parentsquare-client
+uv pip install --index-url https://test.pypi.org/simple/ \
+  --extra-index-url https://pypi.org/simple/ parentsquare-client
+```
+
+TestPyPI and PyPI are separate indexes. Use a new version for every rehearsal
+and final publication.
+
 ## Release flow
 
 1. Update the version in `pyproject.toml` and run `uv lock`.
