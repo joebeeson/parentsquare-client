@@ -108,9 +108,13 @@ async def test_client_discovers_students_dashboards_groups_and_raw_reads(fixture
 async def test_account_enrichment_resolves_school_names_and_switcher_schools(
     fixture_dir: Path,
 ) -> None:
-    root = (fixture_dir / "root.html").read_text().replace(
-        '<a href="/schools/101/feeds">Bennington Middle School</a>',
-        '<script>gon.institute_id=101;</script>',
+    root = (
+        (fixture_dir / "root.html")
+        .read_text()
+        .replace(
+            '<a href="/schools/101/feeds">Bennington Middle School</a>',
+            "<script>gon.institute_id=101;</script>",
+        )
     )
     feed = (fixture_dir / "feed_context.html").read_text()
     switch = (fixture_dir / "school_switch.html").read_text()
