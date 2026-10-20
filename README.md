@@ -1,5 +1,12 @@
 # parentsquare-client
 
+[![CI](https://github.com/joebeeson/parentsquare-client/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/joebeeson/parentsquare-client/actions/workflows/ci.yml)
+[![Prek](https://github.com/joebeeson/parentsquare-client/actions/workflows/prek.yml/badge.svg?branch=master)](https://github.com/joebeeson/parentsquare-client/actions/workflows/prek.yml)
+[![CodeQL](https://github.com/joebeeson/parentsquare-client/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/joebeeson/parentsquare-client/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/joebeeson/parentsquare-client/badge)](https://securityscorecards.dev/viewer/?uri=github.com/joebeeson/parentsquare-client)
+[![Latest release](https://img.shields.io/github/v/release/joebeeson/parentsquare-client?sort=semver)](https://github.com/joebeeson/parentsquare-client/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 An unofficial, read-only sync and async ParentSquare client for school posts
 and calendar events.
 
@@ -12,8 +19,34 @@ district's policies before using it.
 The package has no dlt or Home Assistant dependency:
 
 ```bash
-pip install "parentsquare-client @ git+https://github.com/joebeeson/parentsquare-client.git@v0.1.1"
+pip install "parentsquare-client @ git+https://github.com/joebeeson/parentsquare-client.git@v0.1.2"
 ```
+
+Credential storage is opt-in. Install the `keyring` extra to use the operating
+system's configured credential store:
+
+```bash
+pip install "parentsquare-client[keyring] @ git+https://github.com/joebeeson/parentsquare-client.git@v0.1.2"
+```
+
+```python
+from parentsquare import KeyringCredentialStore
+
+credentials = KeyringCredentialStore()
+credentials.set_password("parent@example.com", "password")
+password = credentials.get_password("parent@example.com")
+```
+
+The default client does not read or write the keyring. Home Assistant keeps its
+own config-entry credential policy.
+
+## Development
+
+Install the development environment with `uv sync --extra dev`, then run
+`uv run pytest`. Install `prek` with `uvx prek install` to enable the same
+checks used by CI. Tagged releases create GitHub release artifacts; the
+published release workflow uses PyPI Trusted Publishing and can be dispatched
+against TestPyPI for a pre-release verification.
 
 ```python
 from parentsquare import AsyncParentSquareClient

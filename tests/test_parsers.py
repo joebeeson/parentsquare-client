@@ -4,7 +4,6 @@ from pathlib import Path
 from parentsquare.models import School
 from parentsquare.parsers import parse_calendar, parse_posts, parse_schools
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 

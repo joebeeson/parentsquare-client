@@ -12,9 +12,7 @@ class MFARequired(ParentSquareError):
     def __init__(self, contact_method: str, contact_hint: str):
         self.contact_method = contact_method
         self.contact_hint = contact_hint
-        super().__init__(
-            f"ParentSquare MFA code required via {contact_method} ({contact_hint})"
-        )
+        super().__init__(f"ParentSquare MFA code required via {contact_method} ({contact_hint})")
 
 
 class RateLimitError(ParentSquareError):

@@ -15,7 +15,6 @@ from .errors import AuthenticationError, MFARequired, RateLimitError
 from .models import CalendarEvent, Post, School
 from .parsers import parse_calendar, parse_posts, parse_schools
 
-
 _BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36",
     "Accept-Language": "en-US,en;q=0.9",
@@ -85,7 +84,9 @@ class AsyncParentSquareClient:
                     json_data = json.loads(text)
                 except json.JSONDecodeError:
                     json_data = None
-            result = _Response(response.status, str(response.url), response.headers, text, json_data)
+            result = _Response(
+                response.status, str(response.url), response.headers, text, json_data
+            )
         self._check_response(result)
         return result
 
@@ -182,7 +183,9 @@ class AsyncParentSquareClient:
             return
         try:
             response = await self._request("GET", "/")
-            if "/signin" not in response.url and re.search(r"gon\.user_id\s*=\s*\d+", response.text):
+            if "/signin" not in response.url and re.search(
+                r"gon\.user_id\s*=\s*\d+", response.text
+            ):
                 self._authenticated = True
                 return
         except AuthenticationError:
@@ -203,15 +206,11 @@ class AsyncParentSquareClient:
         results: list[Post] = []
         for page in range(1, max(1, pages) + 1):
             try:
-                response = await self._get(
-                    f"/schools/{school_obj.id}/feeds", params={"page": page}
-                )
+                response = await self._get(f"/schools/{school_obj.id}/feeds", params={"page": page})
             except AuthenticationError:
                 self._authenticated = False
                 await self.ensure_authenticated()
-                response = await self._get(
-                    f"/schools/{school_obj.id}/feeds", params={"page": page}
-                )
+                response = await self._get(f"/schools/{school_obj.id}/feeds", params={"page": page})
             page_posts = parse_posts(response.text, base_url=self.base_url, school=school_obj)
             results.extend(page_posts)
             if not page_posts:
@@ -267,6 +266,7 @@ class ParentSquareClient:
         try:
             asyncio.get_running_loop()
         except RuntimeError:
+
             async def invoke() -> Any:
                 if self._closed:
                     raise RuntimeError("ParentSquareClient is closed")
@@ -277,7 +277,9 @@ class ParentSquareClient:
                 return await operation(self._async)
 
             return self._runner.run(invoke())
-        raise RuntimeError("ParentSquareClient cannot run inside an active event loop; use AsyncParentSquareClient")
+        raise RuntimeError(
+            "ParentSquareClient cannot run inside an active event loop; use AsyncParentSquareClient"
+        )
 
     def __enter__(self) -> "ParentSquareClient":
         self._run(lambda client: client.ensure_authenticated())

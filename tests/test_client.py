@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 import aiohttp
@@ -8,7 +7,6 @@ from aiohttp.test_utils import TestServer
 
 from parentsquare.client import AsyncParentSquareClient
 from parentsquare.errors import MFARequired, RateLimitError
-
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -46,7 +44,10 @@ async def test_client_discovers_and_fetches_posts_and_calendar() -> None:
     )
     session = aiohttp.ClientSession(base_url=str(server.make_url("/")).rstrip("/"))
     client = AsyncParentSquareClient(
-        "user@example.com", "secret", base_url=str(server.make_url("/")).rstrip("/"), session=session
+        "user@example.com",
+        "secret",
+        base_url=str(server.make_url("/")).rstrip("/"),
+        session=session,
     )
     schools = await client.discover_schools()
     posts = await client.fetch_posts(schools[0])
@@ -67,7 +68,10 @@ async def test_rate_limit_is_structured() -> None:
     server = await make_server({"/": handler})
     session = aiohttp.ClientSession(base_url=str(server.make_url("/")).rstrip("/"))
     client = AsyncParentSquareClient(
-        "user@example.com", "secret", base_url=str(server.make_url("/")).rstrip("/"), session=session
+        "user@example.com",
+        "secret",
+        base_url=str(server.make_url("/")).rstrip("/"),
+        session=session,
     )
     with pytest.raises(RateLimitError) as error:
         await client._get("/")
@@ -94,7 +98,9 @@ async def test_login_requires_mfa_and_accepts_six_digit_code() -> None:
 
     async def sessions_handler(_: web.Request) -> web.Response:
         calls.append("/sessions")
-        raise web.HTTPFound("/signin?mfa_required=true&contact_method=email&contact_value=p***@example.com")
+        raise web.HTTPFound(
+            "/signin?mfa_required=true&contact_method=email&contact_value=p***@example.com"
+        )
 
     async def mfa_handler(request: web.Request) -> web.Response:
         calls.append("/mfa/submit")
@@ -112,7 +118,10 @@ async def test_login_requires_mfa_and_accepts_six_digit_code() -> None:
     )
     session = aiohttp.ClientSession(base_url=str(server.make_url("/")).rstrip("/"))
     client = AsyncParentSquareClient(
-        "user@example.com", "secret", base_url=str(server.make_url("/")).rstrip("/"), session=session
+        "user@example.com",
+        "secret",
+        base_url=str(server.make_url("/")).rstrip("/"),
+        session=session,
     )
     with pytest.raises(MFARequired) as error:
         await client.login()

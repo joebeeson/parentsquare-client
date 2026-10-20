@@ -8,3 +8,6 @@ dist/
 build/
 *.egg-info/
 .env
+.ruff_cache/
+.coverage
+coverage.xml

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin
 
@@ -67,9 +67,7 @@ def parse_posts(
         if not match:
             continue
         post_id = match.group(1)
-        heading = feed.find(attrs={"role": "heading"}) or feed.find(
-            class_=re.compile(r"subject")
-        )
+        heading = feed.find(attrs={"role": "heading"}) or feed.find(class_=re.compile(r"subject"))
         title = heading.get_text(" ", strip=True) if heading else ""
         author_el = feed.find(class_=re.compile(r"user-name"))
         author = author_el.get_text(" ", strip=True) if author_el else None
