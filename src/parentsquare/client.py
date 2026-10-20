@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ from .parsers import (
     _school_id_by_name,
     parse_account,
     parse_calendar,
+    parse_group_payload,
     parse_groups,
     parse_posts,
     parse_school_features,
@@ -36,6 +38,28 @@ _BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36",
     "Accept-Language": "en-US,en;q=0.9",
 }
+
+_GROUPS_QUERY = """
+query GetGroups($institute: InstituteInputType!, $studentId: ID = null) {
+  groupsIndex(institute: $institute, studentId: $studentId) {
+    list {
+      instituteName
+      hasGroups
+      categorizedGroups {
+        name
+        groups {
+          id
+          name
+          description
+          isPublic
+        }
+      }
+    }
+  }
+}
+"""
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -69,6 +93,7 @@ class AsyncParentSquareClient:
         self._authenticated = False
         self._pending_mfa: dict[str, str] | None = None
         self._account: AccountSnapshot | None = None
+        self._csrf_token: str | None = None
 
     async def __aenter__(self) -> "AsyncParentSquareClient":
         await self.ensure_authenticated()
@@ -128,6 +153,22 @@ class AsyncParentSquareClient:
             raise AuthenticationError("ParentSquare session expired")
         return response
 
+    async def _authenticated_post(self, path: str, **kwargs: Any) -> _Response:
+        """POST a read-only JSON endpoint with one safe session-renewal retry."""
+        await self.ensure_authenticated()
+        try:
+            response = await self._request("POST", path, **kwargs)
+            if "/signin" in response.url:
+                raise AuthenticationError("ParentSquare session expired")
+            return response
+        except AuthenticationError:
+            self._authenticated = False
+            await self.ensure_authenticated()
+            response = await self._request("POST", path, **kwargs)
+            if "/signin" in response.url:
+                raise AuthenticationError("ParentSquare session expired")
+            return response
+
     async def _authenticated_get(self, path: str, **kwargs: Any) -> _Response:
         """GET with one safe session-renewal retry."""
         await self.ensure_authenticated()
@@ -178,9 +219,40 @@ class AsyncParentSquareClient:
             raise AuthenticationError("ParentSquare sign-in page did not contain a CSRF token")
         return str(element["content"])
 
+    async def _graphql(self, query: str, variables: dict[str, Any], operation_name: str) -> Any:
+        """Execute a read-only ParentSquare GraphQL query."""
+
+        async def execute() -> _Response:
+            if self._csrf_token is None:
+                self._csrf_token = self._csrf(await self.get_html("/"))
+            return await self._authenticated_post(
+                "/graphql",
+                json={"query": query, "variables": variables, "operationName": operation_name},
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-CSRF-Token": self._csrf_token,
+                    "Referer": f"{self.base_url}/",
+                },
+            )
+
+        try:
+            response = await execute()
+        except AuthenticationError:
+            self._csrf_token = None
+            response = await execute()
+        if response.json_data is not None:
+            return response.json_data
+        try:
+            return json.loads(response.text)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("ParentSquare returned a non-JSON GraphQL response") from exc
+
     async def login(self) -> None:
         sign_in = await self._request("GET", "/signin")
         csrf = self._csrf(sign_in.text)
+        self._csrf_token = csrf
         response = await self._request(
             "POST",
             "/sessions",
@@ -200,6 +272,7 @@ class AsyncParentSquareClient:
                 mfa_csrf = self._csrf(response.text)
             except AuthenticationError:
                 mfa_csrf = csrf
+            self._csrf_token = mfa_csrf
             self._pending_mfa = {
                 "contact_method": params.get("contact_method", "email"),
                 "contact_hint": params.get("contact_value", ""),
@@ -356,11 +429,128 @@ class AsyncParentSquareClient:
         response = await self._authenticated_get(f"/schools/{school_obj.id}/feeds")
         return parse_school_features(response.text, school=school_obj)
 
-    async def fetch_groups(self, school: School | int) -> list[Group]:
-        """List groups visible within a school."""
+    async def fetch_groups(
+        self,
+        school: School | int,
+        students: Iterable[Student] | None = None,
+    ) -> list[Group]:
+        """List groups visible within a school and attach linked students.
+
+        ParentSquare's JSON group endpoint provides the school-wide catalog.
+        Its authenticated GraphQL picker provides the parent-visible
+        student-to-group relationship, which is used when ``students`` are
+        supplied.  GraphQL enrichment is best effort for source changes, while
+        authentication and rate-limit failures still reach callers.
+        """
         school_obj = school if isinstance(school, School) else School(school, f"School {school}")
-        response = await self._authenticated_get(f"/schools/{school_obj.id}/groups")
-        return parse_groups(response.text, school=school_obj)
+        groups: list[Group] = []
+        try:
+            payload = await self.get_json(f"/api/v2/schools/{school_obj.id}/groups")
+            groups = parse_group_payload(payload, school=school_obj)
+        except (AuthenticationError, RateLimitError):
+            raise
+        except Exception:
+            LOGGER.debug("JSON group discovery failed for school %s", school_obj.id, exc_info=True)
+        if not groups:
+            response = await self._authenticated_get(f"/schools/{school_obj.id}/groups")
+            groups = parse_groups(response.text, school=school_obj)
+
+        students_for_school = [
+            student for student in (students or ()) if student.school_id == school_obj.id
+        ]
+        if not students_for_school:
+            return groups
+
+        student_ids_by_group: dict[int, set[int]] = {}
+        graphql_groups: dict[int, Group] = {}
+        for student in students_for_school:
+            try:
+                payload = await self._graphql(
+                    _GROUPS_QUERY,
+                    {
+                        "institute": {"type": "school", "id": school_obj.id},
+                        "studentId": str(student.id),
+                    },
+                    "GetGroups",
+                )
+            except (AuthenticationError, RateLimitError):
+                raise
+            except Exception:
+                LOGGER.debug(
+                    "GraphQL group enrichment failed for student %s", student.id, exc_info=True
+                )
+                continue
+            group_index = (
+                payload.get("data", {}).get("groupsIndex", {}) if isinstance(payload, dict) else {}
+            )
+            listing = group_index.get("list", {}) if isinstance(group_index, dict) else {}
+            categories = listing.get("categorizedGroups", []) if isinstance(listing, dict) else []
+            if not isinstance(categories, list):
+                continue
+            for category in categories:
+                if not isinstance(category, dict):
+                    continue
+                category_name = str(category.get("name") or "").strip() or None
+                raw_category_groups = category.get("groups", [])
+                if not isinstance(raw_category_groups, list):
+                    continue
+                for raw_group in raw_category_groups:
+                    if not isinstance(raw_group, dict):
+                        continue
+                    raw_group_id = raw_group.get("id")
+                    if raw_group_id is None:
+                        continue
+                    try:
+                        group_id = int(raw_group_id)
+                    except (TypeError, ValueError):
+                        continue
+                    student_ids_by_group.setdefault(group_id, set()).add(student.id)
+                    if group_id not in graphql_groups:
+                        graphql_groups[group_id] = Group(
+                            id=group_id,
+                            name=str(raw_group.get("name") or f"Group {group_id}").strip(),
+                            school_id=school_obj.id,
+                            school_name=school_obj.name,
+                            description=(str(raw_group["description"]).strip() or None)
+                            if raw_group.get("description") is not None
+                            else None,
+                            category=category_name,
+                            visibility=("PUBLIC" if raw_group.get("isPublic") else "PRIVATE"),
+                        )
+
+        merged: dict[int, Group] = {group.id: group for group in groups}
+        for group_id, group in graphql_groups.items():
+            existing = merged.get(group_id)
+            if existing is None:
+                merged[group_id] = group
+            else:
+                merged[group_id] = Group(
+                    id=existing.id,
+                    name=existing.name or group.name,
+                    school_id=existing.school_id,
+                    school_name=existing.school_name or group.school_name,
+                    member_count=existing.member_count,
+                    description=existing.description or group.description,
+                    post_count=existing.post_count,
+                    student_ids=tuple(sorted(student_ids_by_group.get(group_id, set()))),
+                    category=group.category,
+                    visibility=existing.visibility or group.visibility,
+                )
+        return [
+            Group(
+                id=group.id,
+                name=group.name,
+                school_id=group.school_id,
+                school_name=group.school_name,
+                member_count=group.member_count,
+                description=group.description,
+                post_count=group.post_count,
+                student_ids=tuple(sorted(student_ids_by_group.get(group.id, set()))),
+                category=group.category,
+                visibility=group.visibility,
+            )
+            for group in merged.values()
+        ]
 
     async def fetch_group_posts(
         self, school: School | int, group: Group | int, *, pages: int = 1
@@ -379,6 +569,7 @@ class AsyncParentSquareClient:
                 base_url=self.base_url,
                 school=school_obj,
                 group_id=group_id,
+                group_name=group.name if isinstance(group, Group) else None,
             )
             results.extend(page_posts)
             if not page_posts:
@@ -498,8 +689,12 @@ class ParentSquareClient:
     def fetch_school_features(self, school: School | int) -> SchoolFeatures:
         return self._run(lambda client: client.fetch_school_features(school))
 
-    def fetch_groups(self, school: School | int) -> list[Group]:
-        return self._run(lambda client: client.fetch_groups(school))
+    def fetch_groups(
+        self,
+        school: School | int,
+        students: Iterable[Student] | None = None,
+    ) -> list[Group]:
+        return self._run(lambda client: client.fetch_groups(school, students=students))
 
     def fetch_group_posts(
         self, school: School | int, group: Group | int, *, pages: int = 1

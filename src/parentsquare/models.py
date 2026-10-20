@@ -82,9 +82,14 @@ class Group:
     member_count: int | None = None
     description: str | None = None
     post_count: int | None = None
+    student_ids: tuple[int, ...] = ()
+    category: str | None = None
+    visibility: str | None = None
 
     def to_record(self) -> dict[str, Any]:
-        return asdict(self)
+        record = asdict(self)
+        record["student_ids"] = list(self.student_ids)
+        return record
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +135,7 @@ class Post:
     school_name: str | None
     summary: str | None = None
     group_id: int | None = None
+    group_name: str | None = None
 
     def to_record(self) -> dict[str, Any]:
         return {
@@ -142,6 +148,7 @@ class Post:
             "school_name": self.school_name,
             "summary": self.summary,
             "group_id": self.group_id,
+            "group_name": self.group_name,
         }
 
 

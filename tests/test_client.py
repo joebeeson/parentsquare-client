@@ -7,6 +7,7 @@ from aiohttp.test_utils import TestServer
 
 from parentsquare.client import AsyncParentSquareClient
 from parentsquare.errors import MFARequired, RateLimitError
+from parentsquare.models import School, Student
 
 
 async def make_server(routes: dict[str, object]) -> TestServer:
@@ -179,6 +180,94 @@ async def test_rate_limit_is_structured() -> None:
     with pytest.raises(RateLimitError) as error:
         await client._get("/")
     assert error.value.retry_after == 12
+    await session.close()
+    await server.close()
+
+
+@pytest.mark.asyncio
+async def test_client_merges_json_groups_with_student_graphql_membership() -> None:
+    root = '<meta name="csrf-token" content="root-csrf"><script>gon.user_id=42;</script><a href="/schools/101/feeds">Middle</a>'
+
+    async def root_handler(_: web.Request) -> web.Response:
+        return web.Response(text=root)
+
+    async def groups_handler(_: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "data": [
+                    {
+                        "id": "55",
+                        "type": "group",
+                        "attributes": {
+                            "id": 55,
+                            "name": "Cooking Club",
+                            "visibility": "PRIVATE",
+                            "active_posts_count": 3,
+                        },
+                    }
+                ]
+            }
+        )
+
+    async def graphql_handler(request: web.Request) -> web.Response:
+        payload = await request.json()
+        student_id = payload["variables"]["studentId"]
+        if student_id == "7":
+            groups = [
+                {
+                    "id": 55,
+                    "name": "Cooking Club",
+                    "description": "Kitchen projects",
+                    "isPublic": False,
+                }
+            ]
+        else:
+            groups = [
+                {
+                    "id": 77,
+                    "name": "Robotics",
+                    "description": "STEM club",
+                    "isPublic": True,
+                }
+            ]
+        return web.json_response(
+            {
+                "data": {
+                    "groupsIndex": {
+                        "list": {
+                            "hasGroups": True,
+                            "categorizedGroups": [{"name": "School", "groups": groups}],
+                        }
+                    }
+                }
+            }
+        )
+
+    server = await make_server(
+        {
+            "/": root_handler,
+            "/api/v2/schools/101/groups": groups_handler,
+            "/graphql": graphql_handler,
+        }
+    )
+    session = aiohttp.ClientSession(base_url=str(server.make_url("/")).rstrip("/"))
+    client = AsyncParentSquareClient(
+        "user@example.com",
+        "secret",
+        base_url=str(server.make_url("/")).rstrip("/"),
+        session=session,
+    )
+    groups = await client.fetch_groups(
+        School(101, "Middle"),
+        students=[Student(7, "Alex", school_id=101), Student(8, "Sam", school_id=101)],
+    )
+    assert [(group.id, group.name, group.student_ids) for group in groups] == [
+        (55, "Cooking Club", (7,)),
+        (77, "Robotics", (8,)),
+    ]
+    assert groups[1].category == "School"
+    assert groups[1].visibility == "PUBLIC"
+    await client.close()
     await session.close()
     await server.close()
 

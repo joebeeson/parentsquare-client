@@ -5,6 +5,7 @@ from parentsquare.models import School
 from parentsquare.parsers import (
     parse_account,
     parse_calendar,
+    parse_group_payload,
     parse_groups,
     parse_posts,
     parse_school_features,
@@ -75,3 +76,36 @@ def test_parse_groups_and_school_features(fixture_dir: Path) -> None:
         school=school,
     )
     assert features.features == ("Calendar", "Groups")
+
+
+def test_parse_json_groups_preserves_source_metadata() -> None:
+    groups = parse_group_payload(
+        {
+            "data": [
+                {
+                    "id": "55",
+                    "type": "group",
+                    "attributes": {
+                        "id": 55,
+                        "name": "Cooking Club",
+                        "visibility": "PRIVATE",
+                        "active_posts_count": 3,
+                    },
+                }
+            ]
+        },
+        school=School(101, "Bennington Middle School"),
+        student_ids_by_group={55: {7, 8}},
+    )
+    assert groups[0].to_record() == {
+        "id": 55,
+        "name": "Cooking Club",
+        "school_id": 101,
+        "school_name": "Bennington Middle School",
+        "member_count": None,
+        "description": None,
+        "post_count": 3,
+        "student_ids": [7, 8],
+        "category": None,
+        "visibility": "PRIVATE",
+    }

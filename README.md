@@ -64,7 +64,7 @@ async with AsyncParentSquareClient("parent@example.com", "password") as client:
     posts = await client.fetch_posts(schools[0].id)
     events = await client.fetch_calendar_events(schools[0].id)
     dashboard = await client.fetch_student_dashboard(students[0])
-    groups = await client.fetch_groups(schools[0])
+    groups = await client.fetch_groups(schools[0], students=students)
     group_posts = await client.fetch_group_posts(schools[0], groups[0])
 ```
 
@@ -99,7 +99,9 @@ cookies; an embedding application owns that storage policy.
 ## Status
 
 This is an early alpha. Parent-visible schools, students, student dashboards,
-groups, group feeds, posts, and calendars are typed read operations. Less
-stable read-only pages can be reached with the raw methods while their models
-are developed. Replies, acknowledgements, forms, sign-ups, payments,
+groups, group feeds, posts, and calendars are typed read operations. When
+students are supplied to `fetch_groups`, linked student IDs are attached to
+each group from ParentSquare's authenticated group picker. Less stable
+read-only pages can be reached with the raw methods while their models are
+developed. Replies, acknowledgements, forms, sign-ups, payments,
 attachments, and every write operation remain out of scope for this client.

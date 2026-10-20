@@ -174,6 +174,63 @@ def parse_groups(html: str, *, school: School) -> list[Group]:
     return groups
 
 
+def parse_group_payload(
+    payload: object,
+    *,
+    school: School,
+    student_ids_by_group: dict[int, set[int]] | None = None,
+) -> list[Group]:
+    """Parse ParentSquare's JSON:API school-group response.
+
+    The parent web app currently uses this response for its group picker.  The
+    endpoint is undocumented, so missing or malformed fields are deliberately
+    treated as optional and the stable group ID remains the only required
+    value.
+    """
+    if not isinstance(payload, dict):
+        return []
+    raw_groups = payload.get("data")
+    if not isinstance(raw_groups, list):
+        return []
+    groups: list[Group] = []
+    for item in raw_groups:
+        if not isinstance(item, dict):
+            continue
+        raw_attributes = item.get("attributes")
+        attributes = raw_attributes if isinstance(raw_attributes, dict) else item
+        raw_id = attributes.get("id", item.get("id"))
+        try:
+            group_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        name = str(attributes.get("name") or attributes.get("visible_name") or "").strip()
+        if not name:
+            name = f"Group {group_id}"
+        raw_post_count = attributes.get("active_posts_count", attributes.get("post_count"))
+        try:
+            post_count = int(raw_post_count) if raw_post_count is not None else None
+        except (TypeError, ValueError):
+            post_count = None
+        student_ids = tuple(sorted((student_ids_by_group or {}).get(group_id, set())))
+        groups.append(
+            Group(
+                id=group_id,
+                name=name,
+                school_id=school.id,
+                school_name=school.name,
+                description=(str(attributes["description"]).strip() or None)
+                if attributes.get("description") is not None
+                else None,
+                post_count=post_count,
+                student_ids=student_ids,
+                visibility=str(attributes["visibility"]).strip() or None
+                if attributes.get("visibility") is not None
+                else None,
+            )
+        )
+    return groups
+
+
 def parse_student_dashboard(
     html: str, *, student_id: int, student: Student | None = None
 ) -> StudentDashboard:
@@ -246,6 +303,7 @@ def parse_posts(
     base_url: str,
     school: School,
     group_id: int | None = None,
+    group_name: str | None = None,
 ) -> list[Post]:
     soup = BeautifulSoup(html, "html.parser")
     posts: list[Post] = []
@@ -283,6 +341,7 @@ def parse_posts(
                 school_name=school.name,
                 summary=summary,
                 group_id=group_id,
+                group_name=group_name,
             )
         )
     return posts
