@@ -20,10 +20,10 @@ dependencies = [
 [project.optional-dependencies]
 keyring = ["keyring>=25,<26"]
 dev = [
-  "pytest>=8,<9",
+  "pytest>=9.0.3,<10",
   "pytest-cov>=6,<8",
   "pytest-datadir>=1,<2",
-  "pytest-asyncio>=0.24,<1",
+  "pytest-asyncio>=1,<2",
   "pyrefly>=1.4,<2",
   "ruff>=0.8,<1",
   "keyring>=25,<26",
