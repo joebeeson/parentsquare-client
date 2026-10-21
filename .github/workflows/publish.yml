@@ -16,13 +16,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-${{ github.event.release.tag_name || github.ref }}
+  group: publish-${{ github.event_name == 'workflow_dispatch' && inputs.repository || (github.event.release.prerelease && 'testpypi' || 'pypi') }}-${{ github.event.release.tag_name || github.ref }}
   cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    environment: pypi
+    environment:
+      # Keep the OIDC subject distinct for the two package indexes.
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.repository || (github.event.release.prerelease && 'testpypi' || 'pypi') }}
     permissions:
       contents: read
       id-token: write
@@ -34,6 +36,6 @@ jobs:
       - run: uv build
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
-          repository-url: ${{ github.event_name == 'workflow_dispatch' && inputs.repository == 'testpypi' && 'https://test.pypi.org/legacy/' || '' }}
+          repository-url: ${{ (github.event_name == 'workflow_dispatch' && inputs.repository == 'testpypi' || github.event_name == 'release' && github.event.release.prerelease) && 'https://test.pypi.org/legacy/' || '' }}
           skip-existing: true
           attestations: true
