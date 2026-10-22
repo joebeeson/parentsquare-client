@@ -14,7 +14,7 @@ keywords = ["parentsquare", "school", "calendar", "client"]
 dependencies = [
   "aiohttp>=3.10,<4",
   "beautifulsoup4>=4.12,<5",
-  "icalendar>=6,<7",
+  "icalendar>=6,<8",
 ]
 
 [project.optional-dependencies]
