@@ -769,7 +769,7 @@ keyring = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.10,<4" },
     { name = "beautifulsoup4", specifier = ">=4.12,<5" },
-    { name = "icalendar", specifier = ">=6,<7" },
+    { name = "icalendar", specifier = ">=6,<8" },
     { name = "keyring", marker = "extra == 'dev'", specifier = ">=25,<26" },
     { name = "keyring", marker = "extra == 'keyring'", specifier = ">=25,<26" },
     { name = "pyrefly", marker = "extra == 'dev'", specifier = ">=1.4,<2" },
